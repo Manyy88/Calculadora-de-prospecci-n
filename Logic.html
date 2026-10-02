@@ -1,0 +1,11 @@
+<script>
+const Prospecting={
+ calculate(config,line,value){
+  if(!Object.prototype.hasOwnProperty.call(config.lines,line))return null;
+  const b=config.lines[line],target=Math.ceil(config.salesTarget*b.prospects/b.sales);
+  const n=typeof value==='number'?value:(typeof value==='string'&&value.trim()!==''?Number(value):NaN);
+  const generated=Number.isSafeInteger(n)&&n>=0&&n<=1000000?n:null;
+  return {target,generated,gap:generated===null?null:generated-target,missing:generated===null?null:Math.max(target-generated,0)};
+ }
+};
+</script>

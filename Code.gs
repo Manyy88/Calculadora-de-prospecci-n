@@ -1,5 +1,14 @@
 const PROSPECCION={version:'AW-PROS-2',salesTarget:8,holidays:['2026-11-16','2026-12-25','2027-01-01','2027-02-01','2027-03-15'],workdays:[1,2,3,4,5,6],lines:{nuevos:{label:'Nuevos',conversion:0.25},seminuevos:{label:'Seminuevos',conversion:0.25}}};
-const DIRECTORIO_COLS={id:'No. empleado',nombre:'Nombre completo',agencia:'Unidad de negocio',linea:'Línea',puesto:'Puesto',estatus:'Estatus',correo:'Correo'};
+const DIRECTORIO_COLS={id:'ID Colaborador',nombre:'Nombre completo',agencia:'Unidad de negocio',area:'Area',puesto:'Puesto',estatus:'Estatus (activo o baja)',correo:'Correo Institucional'};
+const AREA_A_LINEA={'VENTAS TRADICIONAL':'nuevos','SEMINUEVOS':'seminuevos'};
+const UNIDADES_EXCLUIDAS=['GO RIDERS PACHUCA','GO RIDERS PUEBLA'];
+const DIRECTORIO_REAL={id:'1zM0quUwJAIknNPRTTUY3vTfakOaMJdstKRrN43wO104',tab:'Hoja1'};
+function titulo_(v){return clean_(v).toLocaleLowerCase('es-MX').replace(/(^|[\s\-’'])\p{L}/gu,x=>x.toLocaleUpperCase('es-MX'));}
+function excluida_(v){return UNIDADES_EXCLUIDAS.some(x=>norm_(x)===norm_(v));}
+function lineaArea_(v){const key=Object.keys(AREA_A_LINEA).find(x=>norm_(x)===norm_(v));return key?AREA_A_LINEA[key]:null;}
+function directorioConfig_(){return {id:props_().getProperty('DIRECTORIO_SHEET_ID')||DIRECTORIO_REAL.id,tab:props_().getProperty('DIRECTORIO_TAB')||DIRECTORIO_REAL.tab};}
+function configurarDirectorioReal(){admin_();return lock_(()=>{props_().setProperties({DIRECTORIO_SHEET_ID:DIRECTORIO_REAL.id,DIRECTORIO_TAB:DIRECTORIO_REAL.tab});CacheService.getScriptCache().remove(dirKey_());return directory_(true).filter(x=>x.activo).length+' asesores activos.';});}
+function eliminarCatalogosLocales(){admin_();return lock_(()=>{const b=book_();if(b.getId()===directorioConfig_().id)throw new Error('El archivo de capturas debe ser distinto del directorio externo.');sheets_(b,true);const deleted=[];['Asesores','Bitacora_Asesores'].forEach(n=>{const sheet=b.getSheetByName(n);if(sheet){b.deleteSheet(sheet);deleted.push(n);}});return deleted.length?'Hojas eliminadas: '+deleted.join(', '):'No existen catálogos locales que eliminar.';});}
 const CAP_HEADERS=['captura_id','fecha','mes','asesor_id','nombre','agencia','linea','prospectos_dia','acumulado_mes','meta_ventas','conversion','objetivo_prospectos','dia_habil','dias_habiles_mes','esperado_hoy','ritmo_pct','semaforo','faltantes','por_dia','accion','creado_en','actualizado_en','version_parametros'];
 const SOL_HEADERS=['fecha','tipo','asesor_id','nombre','unidad_negocio','linea','detalle','solicitado_por','estatus'];
 let LOGIC_INSTANCE;
@@ -34,30 +43,32 @@ function sheets_(book,create){
  return {cap,sol};
 }
 function configurar(){admin_();return lock_(()=>{const active=SpreadsheetApp.getActiveSpreadsheet();if(!props_().getProperty('PROSPECCION_SHEET_ID')){if(!active)throw new Error('Abre el proyecto desde la hoja de destino.');props_().setProperty('PROSPECCION_SHEET_ID',active.getId());}sheets_(book_(),true);return 'Capturas y Solicitudes listas. Prospeccion no se modificó.';});}
-function dirKey_(){return 'AWDIR2-'+hash_((props_().getProperty('DIRECTORIO_SHEET_ID')||'')+'|'+(props_().getProperty('DIRECTORIO_TAB')||'Directorio')+JSON.stringify(DIRECTORIO_COLS)).slice(0,30);}
+function dirKey_(){return 'AWDIR3-'+hash_(JSON.stringify([directorioConfig_(),DIRECTORIO_COLS,AREA_A_LINEA,UNIDADES_EXCLUIDAS])).slice(0,30);}
 function directory_(fresh){
- const id=props_().getProperty('DIRECTORIO_SHEET_ID');if(!id)throw new Error('El directorio aún no está configurado. El administrador debe ejecutar crearDirectorioPrueba o establecer DIRECTORIO_SHEET_ID.');
- const cache=CacheService.getScriptCache(),key=dirKey_();if(!fresh){const hit=cache.get(key);if(hit){try{return JSON.parse(hit);}catch(e){}}}
- const sheet=SpreadsheetApp.openById(id).getSheetByName(props_().getProperty('DIRECTORIO_TAB')||'Directorio');if(!sheet)throw new Error('No se encontró la pestaña del directorio. Revisa DIRECTORIO_TAB.');
+ const cfg=directorioConfig_(),cache=CacheService.getScriptCache(),key=dirKey_();
+ if(!fresh){const hit=cache.get(key);if(hit){try{return JSON.parse(hit);}catch(e){}}}
+ const sheet=SpreadsheetApp.openById(cfg.id).getSheetByName(cfg.tab);if(!sheet)throw new Error('No se encontró la pestaña del directorio: '+cfg.tab+'. Revisa DIRECTORIO_TAB.');
  const values=sheet.getDataRange().getDisplayValues(),headers=(values[0]||[]).map(norm_),idx={};
  Object.keys(DIRECTORIO_COLS).forEach(k=>{idx[k]=headers.indexOf(norm_(DIRECTORIO_COLS[k]));if(idx[k]<0)throw new Error('Falta la columna «'+DIRECTORIO_COLS[k]+'» en el directorio.');});
- const records=[],ids={};
- values.slice(1).forEach((row,i)=>{if(row.every(x=>!clean_(x)))return;const nombre=clean_(row[idx.nombre]),agencia=clean_(row[idx.agencia]);if(!nombre||!agencia)throw new Error('Falta nombre o unidad de negocio en la fila '+(i+2)+' del directorio.');
+ const records=[],ids=new Set();
+ values.slice(1).forEach((row,i)=>{
+  if(row.every(x=>!clean_(x)))return;
+  const linea=lineaArea_(row[idx.area]);if(!linea||excluida_(row[idx.agencia]))return;
+  const nombre=titulo_(row[idx.nombre]),agencia=titulo_(row[idx.agencia]);
+  if(!nombre||!agencia)throw new Error('Falta nombre o unidad de negocio en la fila '+(i+2)+' del directorio.');
   let asesor_id=clean_(row[idx.id]);if(!asesor_id){asesor_id='N-'+hash_(norm_(nombre)+'|'+norm_(agencia)).slice(0,16);console.log('Directorio fila '+(i+2)+': ID de respaldo '+asesor_id);}
-  const linea=norm_(row[idx.linea]),activo=norm_(row[idx.estatus])==='activo';
-  if(activo&&!Object.prototype.hasOwnProperty.call(PROSPECCION.lines,linea))throw new Error('Línea inválida en directorio, fila '+(i+2)+': '+row[idx.linea]);
-  if(ids[asesor_id])throw new Error('No. empleado duplicado en directorio: '+asesor_id);ids[asesor_id]=true;
-  records.push({asesor_id,nombre,agencia,linea,activo});
+  if(ids.has(asesor_id))throw new Error('ID Colaborador duplicado en directorio: '+asesor_id);ids.add(asesor_id);
+  records.push({asesor_id,nombre,agencia,linea,activo:norm_(row[idx.estatus])!=='baja'});
  });
  const json=JSON.stringify(records);if(Utilities.newBlob(json).getBytes().length<95000)cache.put(key,json,600);return records;
 }
 function solicitudes_(s){return s.getLastRow()>1?s.getRange(2,1,s.getLastRow()-1,9).getValues().map((v,i)=>({row:i+2,v})):[];}
-function temporary_(sol){return solicitudes_(sol).filter(x=>x.v[1]==='alta'&&x.v[8]==='pendiente').map(x=>({asesor_id:String(x.v[2]),nombre:String(x.v[3]),agencia:String(x.v[4]),linea:String(x.v[5]),activo:true,temporal:true}));}
+function temporary_(sol){return solicitudes_(sol).filter(x=>x.v[1]==='alta'&&x.v[8]==='pendiente'&&!excluida_(x.v[4])).map(x=>({asesor_id:String(x.v[2]),nombre:titulo_(x.v[3]),agencia:titulo_(x.v[4]),linea:String(x.v[5]),activo:true,temporal:true}));}
 function resolve_(id,dir,sol){
  id=text_(id,'identificador',160);let p=dir.find(x=>x.asesor_id===id);
  if(p){if(!p.activo)throw new Error('Este asesor está dado de baja. Selecciona otro perfil o consulta al responsable del directorio.');return p;}
  const request=solicitudes_(sol).find(x=>String(x.v[2])===id&&x.v[1]==='alta');
- if(request){if(request.v[8]==='pendiente')return {asesor_id:id,nombre:String(request.v[3]),agencia:String(request.v[4]),linea:String(request.v[5]),activo:true,temporal:true};
+ if(request){if(excluida_(request.v[4]))throw new Error('Esta unidad está excluida de la calculadora.');if(request.v[8]==='pendiente')return {asesor_id:id,nombre:titulo_(request.v[3]),agencia:titulo_(request.v[4]),linea:String(request.v[5]),activo:true,temporal:true};
   try{const linked=JSON.parse(String(request.v[6]));p=dir.find(x=>x.asesor_id===linked.vinculadoA);if(p&&p.activo)return p;}catch(e){}
  }
  throw new Error('No encontramos este asesor activo. Vuelve a elegir tu agencia y nombre.');
@@ -75,7 +86,8 @@ function profileMonth_(profile,cap,today){
 }
 function getAsesorMes(asesorId){const dir=directory_(),s=sheets_(book_());return profileMonth_(resolve_(asesorId,dir,s.sol),s.cap,today_());}
 function register_(p,dir,sol){
- const nombre=text_(p&&p.nombre,'nombre',120),agencia=text_(p&&p.agencia,'unidad de negocio',180),linea=p.linea;
+ const nombre=titulo_(text_(p&&p.nombre,'nombre',120)),agencia=titulo_(text_(p&&p.agencia,'unidad de negocio',180)),linea=p.linea;
+ if(excluida_(agencia))throw new Error('Esta unidad está excluida de la calculadora.');
  if(!Object.prototype.hasOwnProperty.call(PROSPECCION.lines,linea))throw new Error('Selecciona una línea válida.');
  const matches=dir.filter(x=>norm_(x.nombre)===norm_(nombre)&&norm_(x.agencia)===norm_(agencia));
  if(matches.length>1)throw new Error('Hay nombres coincidentes en el directorio. Solicita al responsable que verifique tu registro.');
@@ -108,22 +120,23 @@ function upsert_(p,profile,cap,today){
  requests.push(p.requestId);cap.getRange(dest,1).setNote(JSON.stringify(requests));SpreadsheetApp.flush();return profileMonth_(profile,cap,today);
 }
 function saveCaptura(p){const dir=directory_();return lock_(()=>{const s=sheets_(book_()),profile=resolve_(p&&p.asesorId,dir,s.sol);return upsert_(p,profile,s.cap,today_());});}
-function vincularTemporal(idTemporal,noEmpleado){
- admin_();text_(idTemporal,'ID temporal',160);text_(noEmpleado,'No. empleado',160);if(!/^T-[A-Z0-9]{6}$/.test(idTemporal))throw new Error('ID temporal inválido.');const dir=directory_(true),target=dir.find(x=>x.asesor_id===noEmpleado&&x.activo);if(!target)throw new Error('Primero registra al asesor activo en el directorio externo.');
+function vincularTemporal(idTemporal,idColaborador){
+ admin_();text_(idTemporal,'ID temporal',160);text_(idColaborador,'ID Colaborador',160);if(!/^T-[A-Z0-9]{6}$/.test(idTemporal))throw new Error('ID temporal inválido.');const dir=directory_(true),target=dir.find(x=>x.asesor_id===idColaborador&&x.activo);if(!target)throw new Error('Primero registra al asesor activo en el directorio externo.');
  return lock_(()=>{const s=sheets_(book_()),request=solicitudes_(s.sol).find(x=>x.v[1]==='alta'&&String(x.v[2])===idTemporal);if(!request)throw new Error('Solicitud temporal no encontrada.');
-  if(request.v[8]==='aplicada'){const detail=JSON.parse(String(request.v[6]));if(detail.vinculadoA===noEmpleado)return 'Ya vinculado.';throw new Error('Este temporal ya se vinculó con otra persona.');}
+  if(request.v[8]==='aplicada'){const detail=JSON.parse(String(request.v[6]));if(detail.vinculadoA===idColaborador)return 'Ya vinculado.';throw new Error('Este temporal ya se vinculó con otra persona.');}
   if(norm_(request.v[3])!==norm_(target.nombre)||norm_(request.v[4])!==norm_(target.agencia))throw new Error('Nombre o unidad no coinciden. Revisa la identidad antes de vincular.');
-  const all=s.cap.getLastRow()>1?s.cap.getRange(2,1,s.cap.getLastRow()-1,8).getValues():[],targetDates=new Set(all.filter(v=>String(v[3])===noEmpleado).map(v=>dayValue_(v[1]))),source=all.map((v,i)=>({v,row:i+2})).filter(x=>String(x.v[3])===idTemporal);
+  const all=s.cap.getLastRow()>1?s.cap.getRange(2,1,s.cap.getLastRow()-1,8).getValues():[],targetDates=new Set(all.filter(v=>String(v[3])===idColaborador).map(v=>dayValue_(v[1]))),source=all.map((v,i)=>({v,row:i+2})).filter(x=>String(x.v[3])===idTemporal);
   if(source.some(x=>targetDates.has(dayValue_(x.v[1]))))throw new Error('Ambos IDs tienen capturas para la misma fecha. Resuelve el duplicado en Capturas antes de vincular; no se sumaron ni borraron registros.');
-  source.forEach(x=>s.cap.getRange(x.row,4).setNumberFormat('@').setValue(noEmpleado));
-  s.sol.getRange(request.row,7).setValue(JSON.stringify({vinculadoA:noEmpleado}));s.sol.getRange(request.row,9).setValue('aplicada');SpreadsheetApp.flush();CacheService.getScriptCache().remove(dirKey_());return 'Vinculado. Capturas reasignadas: '+source.length;
+  source.forEach(x=>s.cap.getRange(x.row,4).setNumberFormat('@').setValue(idColaborador));
+  s.sol.getRange(request.row,7).setValue(JSON.stringify({vinculadoA:idColaborador}));s.sol.getRange(request.row,9).setValue('aplicada');SpreadsheetApp.flush();CacheService.getScriptCache().remove(dirKey_());return 'Vinculado. Capturas reasignadas: '+source.length;
  });
 }
 function crearDirectorioPrueba(){admin_();return lock_(()=>{
- if(props_().getProperty('DIRECTORIO_SHEET_ID'))throw new Error('Ya hay un directorio configurado; no se reemplazó.');
- const book=SpreadsheetApp.create('AW · Directorio de PRUEBA'),s=book.getSheets()[0];s.setName('Directorio');
- const rows=[Object.values(DIRECTORIO_COLS)];for(let i=1;i<=12;i++)rows.push([i===12?'':'DEMO-'+String(i).padStart(3,'0'),'Asesor Demo '+i,'Unidad Demo '+Math.ceil(i/4),i%2?' NUEVOS ':'Seminuevos','Asesor de ventas',i===11?'Baja':'Activo','']);
- s.getRange(1,1,rows.length,7).setNumberFormat('@').setValues(rows);s.setFrozenRows(1);props_().setProperties({DIRECTORIO_SHEET_ID:book.getId(),DIRECTORIO_TAB:'Directorio'});console.log(book.getUrl());return book.getUrl();
+ const book=SpreadsheetApp.create('AW · Directorio de PRUEBA'),s=book.getSheets()[0];s.setName('Hoja1');
+ const rows=[Object.values(DIRECTORIO_COLS)];
+ for(let i=1;i<=12;i++)rows.push([i===10?'':'DEMO-'+String(i).padStart(3,'0'),'ASESOR DEMO '+i,i===12?'GO RIDERS PACHUCA':i<=6?'UNIDAD DEMO 1':'UNIDAD DEMO 2',i%2?' VENTAS TRADICIONAL ':'SEMINUEVOS','Asesor de ventas',i===11?'baja':i===2?'':'activo','']);
+ s.getRange(1,1,rows.length,7).setNumberFormat('@').setValues(rows);s.setFrozenRows(1);
+ console.log('Directorio de prueba: '+book.getUrl());console.log('Para probarlo, establece DIRECTORIO_SHEET_ID='+book.getId()+' y DIRECTORIO_TAB=Hoja1. No se cambió el directorio configurado.');return book.getUrl();
  });}
 function actualizarDirectorio(){admin_();CacheService.getScriptCache().remove(dirKey_());return directory_(true).filter(x=>x.activo).length+' asesores activos.';}
 function testCalculos(){

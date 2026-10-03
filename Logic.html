@@ -1,11 +1,38 @@
 <script>
-const Prospecting={
- calculate(config,line,value){
-  if(!Object.prototype.hasOwnProperty.call(config.lines,line))return null;
-  const b=config.lines[line],target=Math.ceil(config.salesTarget*b.prospects/b.sales);
-  const n=typeof value==='number'?value:(typeof value==='string'&&value.trim()!==''?Number(value):NaN);
-  const generated=Number.isSafeInteger(n)&&n>=0&&n<=1000000?n:null;
-  return {target,generated,gap:generated===null?null:generated-target,missing:generated===null?null:Math.max(target-generated,0)};
+/* Fuente única de cálculo: el servidor carga este mismo archivo, sin DOM ni APIs de Google.
+   Fechas yyyy-MM-dd del servidor. Mes numérico: 1–12. UTC solo para aritmética civil. */
+const Prospecting = (() => {
+ const defaults=[1,2,3,4,5,6];
+ function date(value){
+  if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))throw new Error('Fecha inválida.');
+  const d=new Date(value+'T12:00:00Z');
+  if(!Number.isFinite(d.getTime())||d.toISOString().slice(0,10)!==value)throw new Error('Fecha inválida.');return d;
  }
-};
+ function iso(d){return d.toISOString().slice(0,10);}
+ function isWorking(value,holidays=[],workdays=defaults){return workdays.includes(date(value).getUTCDay())&&!holidays.includes(value);}
+ function monthDates(year,month){
+  if(!Number.isInteger(year)||!Number.isInteger(month)||month<1||month>12)throw new Error('Mes inválido.');
+  const prefix=String(year).padStart(4,'0')+'-'+String(month).padStart(2,'0'),d=date(prefix+'-01'),r=[];
+  while(iso(d).slice(0,7)===prefix){r.push(iso(d));d.setUTCDate(d.getUTCDate()+1);}return r;
+ }
+ function workingDaysInMonth(year,month,holidays=[],workdays=defaults){return monthDates(year,month).filter(d=>isWorking(d,holidays,workdays)).length;}
+ function workingDayIndex(value,holidays=[],workdays=defaults){const d=date(value);return monthDates(d.getUTCFullYear(),d.getUTCMonth()+1).filter(x=>x<=value&&isWorking(x,holidays,workdays)).length;}
+ function allowedDates(today,config){
+  const r=[today],d=date(today),month=today.slice(0,7);let n=0;
+  while(n<3){d.setUTCDate(d.getUTCDate()-1);const s=iso(d);if(s.slice(0,7)!==month)break;if(isWorking(s,config.holidays,config.workdays)){r.push(s);n++;}}return r;
+ }
+ function calculate(config,line,value,today){
+  const d=date(today),basis=Object.prototype.hasOwnProperty.call(config.lines,line)&&config.lines[line];
+  if(!basis||!Number.isFinite(basis.conversion)||basis.conversion<=0||basis.conversion>1||!Number.isFinite(config.salesTarget)||config.salesTarget<0)throw new Error('Parámetros de conversión inválidos.');
+  if(typeof value!=='number'||!Number.isSafeInteger(value)||value<0)throw new Error('Los prospectos deben ser un entero no negativo.');
+  const days=monthDates(d.getUTCFullYear(),d.getUTCMonth()+1).filter(s=>isWorking(s,config.holidays,config.workdays));
+  if(!days.length)throw new Error('El mes no tiene días hábiles configurados.');
+  const objetivo=Math.ceil(config.salesTarget/basis.conversion),diaHabilActual=days.filter(s=>s<=today).length,diasHabilesMes=days.length;
+  const esperadoHoy=Math.ceil(objetivo*diaHabilActual/diasHabilesMes),ritmo=esperadoHoy?value/esperadoHoy:1,faltantes=Math.max(objetivo-value,0),diasRestantes=Math.max(days.filter(s=>s>=today).length,1);
+  return {objetivo,generados:value,esperadoHoy,ritmo,semaforo:ritmo>=1?'verde':ritmo>=0.8?'ambar':'rojo',faltantes,porDia:faltantes?Math.ceil(faltantes/diasRestantes):0,diasHabilesMes,diaHabilActual,diasRestantes};
+ }
+ return {date,iso,isWorking,workingDaysInMonth,workingDayIndex,allowedDates,calculate};
+})();
+function workingDaysInMonth(year,month,holidays){return Prospecting.workingDaysInMonth(year,month,holidays);}
+function workingDayIndex(date,holidays){return Prospecting.workingDayIndex(date,holidays);}
 </script>

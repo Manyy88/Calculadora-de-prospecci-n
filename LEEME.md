@@ -1,64 +1,76 @@
-# Calculadora de Prospección · AUTOCOM WAY
+# Calculadora de Prospección · AUTOCOM WAY v2
 
-## Ver la calculadora
+## Actualizar la aplicación existente
 
-Abre `Vista-previa.html` en Chrome, Safari o Edge. Incluye cálculos e ideas desplegables; indica claramente que no guarda. El botón de guardado se activa en la aplicación instalada.
+1. Abre el mismo proyecto de Apps Script que utiliza la calculadora actual.
+2. Reemplaza por completo el contenido de `Code.gs` (puede llamarse `Código.gs` en tu editor), `Index.html` y `Logic.html`. No dejes copias adicionales del código anterior.
+3. En Configuración del proyecto, activa la visualización del manifiesto y reemplaza `appsscript.json`.
+4. Conserva la propiedad de script `PROSPECCION_SHEET_ID`: debe contener el ID del archivo de datos actual. Si el proyecto está vinculado a esa hoja y no existe la propiedad, `configurar` la establece automáticamente. En proyectos independientes, establece la propiedad antes de continuar.
+5. Ejecuta `configurar` desde el editor, como propietario, y autoriza los permisos. Crea `Capturas` y `Solicitudes` sin modificar `Prospeccion`.
+6. Configura el directorio como se indica abajo.
+7. Ejecuta `testCalculos` y `testCapturas`. Esta última crea un archivo separado de prueba; no modifica tus capturas reales.
+8. En Implementar → Administrar implementaciones, edita la implementación existente, selecciona Nueva versión y actualiza. Mantén ejecución como propietario y acceso para cualquiera. Así conservas la misma URL. Abre de nuevo la aplicación para cargar la nueva versión.
 
-## Instalar en Google Apps Script
+## Directorio
 
-Esta calculadora es una aplicación independiente del Radar 3D. No sustituyas los archivos del proyecto Radar.
+Mientras llega el directorio real, ejecuta `crearDirectorioPrueba` desde el editor. Crea un archivo separado con 12 perfiles ficticios en tres unidades, uno dado de baja y uno sin número de empleado. Configura automáticamente `DIRECTORIO_SHEET_ID` y `DIRECTORIO_TAB`. No reemplaza un directorio ya configurado.
 
-1. Crea una hoja de Google Sheets para los registros de prospección.
-2. Abre **Extensiones → Apps Script** desde esa hoja.
-3. Pega el contenido de `Code.gs` en el archivo del mismo nombre.
-4. Crea archivos HTML llamados **Index** y **Logic** y pega los archivos correspondientes del paquete. No instales `Vista-previa.html`.
-5. En Configuración del proyecto, activa la visualización de **appsscript.json** y pega el archivo incluido. Usa la zona horaria correspondiente a tu operación; se entrega America/Mexico_City.
-6. Guarda y ejecuta **configurar** una vez. Autoriza el acceso a Sheets. Se crea una pestaña llamada **Prospeccion**.
-7. Selecciona **Implementar → Nueva implementación → Aplicación web**. Ejecutar como propietario; selecciona el acceso autorizado de tu organización según las opciones disponibles de Workspace. Comparte la URL `/exec` entre los usuarios autorizados.
-8. Guarda un cálculo de prueba y verifica agencia, asesor, mes, objetivo, prospectos y acción en la nueva fila de Sheets.
+Para utilizar el directorio real, el propietario del script debe poder leerlo. Establece estas propiedades del script:
 
-Para cambios posteriores: modifica el mismo proyecto y publica una nueva versión desde Administrar implementaciones. No se requiere volver a configurar.
+- `DIRECTORIO_SHEET_ID`: ID del archivo que mantiene Mario.
+- `DIRECTORIO_TAB`: nombre de pestaña; por defecto, `Directorio`.
 
-## Lógica aprobada
+Encabezados: `No. empleado`, `Nombre completo`, `Unidad de negocio`, `Línea`, `Puesto`, `Estatus`, `Correo`. El orden es libre. Si los nombres son diferentes, ajusta `DIRECTORIO_COLS`. Guarda los números de empleado como texto para preservar ceros iniciales.
 
-Meta individual fija: **8 ventas mensuales**.
+Solo aparecen asesores con Estatus Activo. Línea acepta Nuevos o Seminuevos, sin importar mayúsculas o acentos. El catálogo se conserva en caché durante diez minutos; `actualizarDirectorio` fuerza su lectura. La aplicación nunca modifica el directorio real.
 
-| Línea | Relación de ejemplo | Objetivo mensual de prospectos |
-|---|---|---:|
-| Nuevos | 40 prospectos → 28 citas → 8 ventas | 40 |
-| Seminuevos | 12 prospectos → 6 citas → 2 ventas | 48 |
-
-Fórmula: redondear hacia arriba (meta de ventas × prospectos base / ventas base). Se conserva la relación exacta, sin redondear tasas intermedias. El objetivo es mensual, no cartera activa ni contactos diarios. Las tasas son parámetros iniciales derivados de ejemplos aprobados, no tasas observadas de todas las agencias. El volumen no garantiza ocho ventas.
-
-La configuración vive en la constante PROSPECCION en Code.gs. Cualquier recalibración exige actualizar su versión. La aplicación publicada obtiene la configuración del servidor; el servidor vuelve a calcular antes de guardar. La vista previa incluye una copia de los parámetros iniciales para funcionar sin conexión.
+La identificación es por selección de nombre, no una autenticación: no requiere correo, PIN ni cuenta Google del asesor. El dispositivo recuerda el ID; si pierde esa preferencia, elegir nuevamente el nombre recupera los datos de la hoja.
 
 ## Uso
 
-Completa agencia y nombre del asesor, selecciona Nuevos o Seminuevos y captura los prospectos de calidad generados durante el mes mostrado. El sistema calcula los faltantes. Abre la ayuda si necesitas ideas. Cuando existe déficit, escribe una acción breve y guarda.
+El asesor elige agencia y nombre una vez. Después captura únicamente los prospectos del día. La calculadora suma el mes, muestra el ritmo y solicita una acción solo cuando está en ámbar o rojo. Si ya capturó hoy, abre el resultado y permite corregir el valor. Guardar otra vez reemplaza la cantidad de esa fecha.
 
-Prospecto de calidad: intención confirmada, interés definido y siguiente paso. Cuenta cada prospecto una sola vez. Un recontacto no es automáticamente un prospecto nuevo; la reactivación sigue las políticas de la marca.
+“Capturar un día anterior” permite los tres días hábiles anteriores, dentro del mes actual. La fecha del servidor gobierna el cálculo, en America/Mexico_City. Capturar hoy se permite también en domingo o feriado.
 
-Agencia y nombre son identidad declarada, no autenticada. No se guardan datos de clientes. Las cifras e identificación permanecen en la sesión abierta; al recargar se capturan nuevamente. La fecha del servidor determina el mes. Si el mes cambia mientras la pantalla está abierta, se pide recargar.
+“No aparezco” genera una solicitud pendiente de alta y permite capturar con ID temporal. Mario revisa `Solicitudes` y realiza el alta en el directorio externo. No se envían notificaciones automáticas.
 
-## Registro
+Para vincular después un temporal al número de empleado, ejecuta `vincularTemporal(idTemporal, noEmpleado)` como propietario. Para pasar los argumentos desde el editor puedes añadir y ejecutar esta función administrativa, sustituyendo ambos valores:
 
-Una fila por guardado: ID técnico, fecha/hora, mes, zona horaria, agencia, asesor, línea, meta de ventas, objetivo de prospectos, prospectos generados, brecha con signo, faltantes, acción y parámetros utilizados. Cada registro es una revisión; no deben sumarse las capturas sucesivas como si fueran prospectos adicionales.
+```javascript
+function vincularUnAsesor() {
+  return vincularTemporal('T-ABC123', '001234');
+}
+```
 
-Se previenen doble clic y reintentos duplicados mediante un ID; los guardados simultáneos usan bloqueo. La acción e identificación se guardan como texto para evitar fórmulas. Si falla el guardado, se conserva la captura y se puede reintentar.
+La vinculación exige coincidencia de nombre y unidad y conserva los registros. Si ambos IDs tienen datos en la misma fecha, se detiene para que el administrador resuelva el duplicado sin sumar ni borrar datos automáticamente.
 
-## Ayudas de prospección
+## Parámetros y cálculo
 
-Contienen las seis acciones aprobadas: reactivar cartera, pedir referidos, explorar renovación, coordinar con Servicio, trabajar leads digitales y activar alianzas locales. No envían mensajes ni crean tareas.
+`PROSPECCION` en Code.gs es la configuración de producción. Meta 8 ventas y conversión 25% generan 32 prospectos por mes en ambas líneas. Los días operativos son lunes a sábado, excepto la lista configurable de feriados. Las tasas son los parámetros solicitados, no una garantía de venta.
 
-Fuente metodológica: Data_IN_Modelo de Ejecución Comercial, páginas 3–8 y 25; calibración acordada en conversación. Referencias externas consultadas para adaptar las ayudas:
+El esperado corresponde al cierre de hoy. “Por día” reparte lo que falta entre los días hábiles restantes, incluyendo hoy cuando es hábil. Verde: ritmo ≥100%; ámbar: ≥80% y <100%; rojo: <80%. La acción depende del ritmo, no del faltante mensual.
 
-- DealerSocket: https://dealersocket.com/wp-content/uploads/downloads/pdf/list-builder-success-guide.pdf
-- VinSolutions: https://www.vinsolutions.com/resources/blog/may-2020/key-crm-actions-to-maximize-current-leads/
-- Cox Automotive: https://www.coxautoinc.com/retail/resources/super-charging-your-dealerships-marketing-programs/
-- automotiveMastermind: https://www.automotivemastermind.com/maximize-service-drive-sales/
+Elegí una única fuente de cálculo conservando los cuatro archivos: el servidor lee el contenido local de Logic.html, extrae su etiqueta script y evalúa esa misma lógica pura. El cliente recibe ese archivo mediante include_. No hay fórmulas duplicadas ni código recibido del usuario para evaluar. Cambiar parámetros no requiere modificar la pantalla ni las fórmulas. El servidor comprueba además una huella de configuración para rechazar capturas con parámetros antiguos.
 
-Identidad: logotipo recuperado del paquete Radar 3D basado en LOGO-AW-BRANDING.pdf. Paleta #7564DA, #212B44 y #E2E9F3.
+## Datos
 
-## Validación
+- `Prospeccion`: histórico v1, intacto. No se convierte ni se suma a los registros diarios.
+- `Capturas`: una fila por asesor y fecha. El acumulado se calcula sumando solo prospectos_dia. Los demás indicadores son fotografías del momento de guardado, incluso al corregir un día anterior.
+- `Solicitudes`: altas pendientes y su vinculación posterior.
 
-Pruebas locales aprobadas: objetivos, campos vacíos, cero, negativos y fracciones; cambios de línea; brecha y cumplimiento; validación de identidad, mes y versión; guardado simulado, duplicados y sintaxis del cliente. El guardado real y la revisión visual en navegador quedan pendientes en el entorno de Google. No se ha publicado desde esta conversación.
+Las escrituras usan bloqueo y validación de servidor. El ID de captura permanece al corregir. Las notas de la primera columna conservan las claves de reintento para evitar aplicar dos veces una misma petición; no las borres. La lectura mensual recupera las ocho primeras columnas y filtra por mes y asesor. No se ha medido la latencia en tu despliegue con 300 usuarios; el índice adicional queda condicionado al umbral de tres segundos indicado en las instrucciones.
+
+## Vista previa y verificación
+
+Abre `Vista-previa.html` en un navegador para explorar los perfiles ficticios y el flujo sin Google Apps Script. Las capturas de esta vista son solo una simulación en memoria y se reinician al recargar; no escriben en Google Sheets. Incluye la configuración v2 solicitada.
+
+Verificado localmente:
+
+- Los siete casos A–G, incluidos domingo, feriado y objetivo superado.
+- Alta temporal, tres capturas, corrección y rechazo fuera de rango.
+- Reintento antiguo después de una corrección: conserva la cantidad más reciente.
+- Catálogo activo, encabezados reordenados, columna faltante, normalización y vinculación temporal.
+- Rechazo de versión obsoleta, fecha futura y acción vacía cuando es obligatoria.
+- Preservación de la hoja histórica y sintaxis JavaScript de interfaz/vista previa.
+
+Las operaciones de Sheets se comprobaron con una simulación local del servicio. Falta ejecutar las funciones de prueba incluidas y comprobar el flujo visual en tu despliegue real; este paquete no se ha publicado ni se ha conectado a tu directorio real.
